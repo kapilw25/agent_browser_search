@@ -1,0 +1,292 @@
+ SystemMessage 
+You are an AI agent designed to automate browser tasks. Your goal is to accomplish the ultimate task following the rules.
+
+# Input Format
+
+Task
+Previous steps
+Current URL
+Open Tabs
+Interactive Elements
+[index]<type>text</type>
+
+- index: Numeric identifier for interaction
+- type: HTML element type (button, input, etc.)
+- text: Element description
+  Example:
+  [33]<div>User form</div>
+  \t*[35]*<button aria-label='Submit form'>Submit</button>
+
+- Only elements with numeric indexes in [] are interactive
+- (stacked) indentation (with \t) is important and means that the element is a (html) child of the element above (with a lower index)
+- Elements with \* are new elements that were added after the previous step (if url has not changed)
+
+# Response Rules
+
+1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
+   {"current_state": {"evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Mention if something unexpected happened. Shortly state why/why not",
+   "memory": "Description of what has been done and what you need to remember. Be very specific. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
+   "next_goal": "What needs to be done with the next immediate action"},
+   "action":[{"one_action_name": {// action-specific parameter}}, // ... more actions in sequence]}
+
+2. ACTIONS: You can specify multiple actions in the list to be executed in sequence. But always specify only one action name per item. Use maximum 10 actions per sequence.
+Common action sequences:
+
+- Form filling: [{"input_text": {"index": 1, "text": "username"}}, {"input_text": {"index": 2, "text": "password"}}, {"click_element": {"index": 3}}]
+- Navigation and extraction: [{"go_to_url": {"url": "https://example.com"}}, {"extract_content": {"goal": "extract the names"}}]
+- Actions are executed in the given order
+- If the page changes after an action, the sequence is interrupted and you get the new state.
+- Only provide the action sequence until an action which changes the page state significantly.
+- Try to be efficient, e.g. fill forms at once, or chain actions where nothing changes on the page
+- only use multiple actions if it makes sense.
+
+3. ELEMENT INTERACTION:
+
+- Only use indexes of the interactive elements
+
+4. NAVIGATION & ERROR HANDLING:
+
+- If no suitable elements exist, use other functions to complete the task
+- If stuck, try alternative approaches - like going back to a previous page, new search, new tab etc.
+- Handle popups/cookies by accepting or closing them
+- Use scroll to find elements you are looking for
+- If you want to research something, open a new tab instead of using the current tab
+- If captcha pops up, try to solve it - else try a different approach
+- If the page is not fully loaded, use wait action
+
+5. TASK COMPLETION:
+
+- Use the done action as the last action as soon as the ultimate task is complete
+- Dont use "done" before you are done with everything the user asked you, except you reach the last step of max_steps.
+- If you reach your last step, use the done action even if the task is not fully finished. Provide all the information you have gathered so far. If the ultimate task is completely finished set success to true. If not everything the user asked for is completed set success in done to false!
+- If you have to do something repeatedly for example the task says for "each", or "for all", or "x times", count always inside "memory" how many times you have done it and how many remain. Don't stop until you have completed like the task asked you. Only call done after the last step.
+- Don't hallucinate actions
+- Make sure you include everything you found out for the ultimate task in the done text parameter. Do not just say you are done, but include the requested information of the task.
+
+6. VISUAL CONTEXT:
+
+- When an image is provided, use it to understand the page layout
+- Bounding boxes with labels on their top right corner correspond to element indexes
+
+7. Form filling:
+
+- If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
+
+8. Long tasks:
+
+- Keep track of the status and subresults in the memory.
+- You are provided with procedural memory summaries that condense previous task history (every N steps). Use these summaries to maintain context about completed actions, current progress, and next steps. The summaries appear in chronological order and contain key information about navigation history, findings, errors encountered, and current state. Refer to these summaries to avoid repeating actions and to ensure consistent progress toward the task goal.
+
+9. Extraction:
+
+- If your task is to find information - call extract_content on the specific pages to get and store the information.
+
+Your responses must be always JSON with the specified format.
+
+ HumanMessage 
+Your ultimate task is: """
+        Step 1. Navigate directly to https://publicrecords.netronline.com/state/TX and select "Bee" from the county list
+
+        Step 2. if "Name" column contains "Appraisal District" >> in that row click "Go to Data Online" button [scroll UP & DOWN, to make sure that you are in the correct row whose "Name" column contains "Appraisal District"]
+
+        Step 3. On the county website, locate and click "Property Search" >> then on next page >> click "by address" button
+
+        Step 4. Enter "306" in street number field and "Main" in street name field (adjust format if needed; use city name if prompted)
+
+        Step 5. Review search results and select the property matching 306 Main St (if multiple results appear, compare all address components)
+        
+        step 5.1: if Property address is asked, use "306 Main" 
+
+        Step 6. On the property details page, locate and extract the "Geographic ID" or "APN" or "Parcel Number" (document the exact format)
+        
+        Step 7: click the row with address matching 306 Main St to view details
+        """. If you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.
+
+ HumanMessage 
+Example output:
+
+ AIMessage 
+
+
+ ToolMessage 
+Browser started
+
+ HumanMessage 
+[Your task history memory starts here]
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action error:   - navigating to "https://publicrecords.netronline.com/state/TX", waiting until "load"
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: selected option Bee with value ['bee']
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: 🔍 Scrolled down the page by one page
+
+ HumanMessage 
+Action result: 🔍 Scrolled up the page by one page
+
+ HumanMessage 
+Action result: 🖱️  Clicked button with index 9: Official State Website
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: 🔍 Scrolled down the page by one page
+
+ HumanMessage 
+Action result: 🔍  Scrolled to text: Appraisal District
+
+ HumanMessage 
+Action result: 📄  Extracted from page
+: ```json
+{
+  "Name": "Bee Appraisal District",
+  "Phone": "(361) 358-0193",
+  "Go to Data Online Link": "https://securepubads.g.doubleclick.net/static/topics/topics_frame.html"
+}
+```
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: 🖱️  Clicked button with index 3: Go to Data Online
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: 🔄  Switched to tab #2 with url https://beecad.org/
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: 🖱️  Clicked button with index 2:
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: 🖱️  Clicked button with index 14:
+
+ AIMessage 
+
+
+ ToolMessage 
+
+
+ HumanMessage 
+Action result: 🔄  Switched to tab #3 with url https://esearch.beecad.org/?_gl=1*18y7gy6*_ga*NTQwNTk5Njg2LjE3NTAzODg4MzA.*_ga_2CLBX6RJ2C*czE3NTAzODg4MjkkbzEkZzAkdDE3NTAzODg4MjkkajYwJGwwJGgw
+
+ HumanMessage 
+[Task history memory ends]
+[Current state starts here]
+The following is one-time information - if you need to remember it write it to memory:
+Current url: https://esearch.beecad.org/?_gl=1*18y7gy6*_ga*NTQwNTk5Njg2LjE3NTAzODg4MzA.*_ga_2CLBX6RJ2C*czE3NTAzODg4MjkkbzEkZzAkdDE3NTAzODg4MjkkajYwJGwwJGgw
+Available tabs:
+[TabInfo(page_id=0, url='https://publicrecords.netronline.com/state/TX/county/bee', title='NETR Online • Bee • Bee Public Records, Search Bee Records, Bee Property Tax, Texas Property Search, Texas Assessor', parent_page_id=None), TabInfo(page_id=1, url='https://www.texas.gov/', title='Texas.gov | The Official Website of the State of Texas', parent_page_id=None), TabInfo(page_id=2, url='https://beecad.org/', title='Bee County Appraisal District', parent_page_id=None), TabInfo(page_id=3, url='https://esearch.beecad.org/?_gl=1*18y7gy6*_ga*NTQwNTk5Njg2LjE3NTAzODg4MzA.*_ga_2CLBX6RJ2C*czE3NTAzODg4MjkkbzEkZzAkdDE3NTAzODg4MjkkajYwJGwwJGgw', title='Bee CAD Property Search', parent_page_id=None)]
+Interactive elements from top layer of the current page inside the viewport:
+[Start of page]
+[0]<h1 >Bee CAD
+Property Search />
+[1]<a >Online Forms />
+[2]<a >Taxpayer Portal />
+[3]<a >Interactive Map />
+[4]<a >Homepage />
+[5]<a >By Owner />
+[6]<a >By Address />
+[7]<a >By ID />
+[8]<a >ARB Search />
+[9]<a >Advanced />
+[10]<label >Owner Name: />
+[11]<input name='OwnerName' type='text' value='' />
+[12]<label >Property Type: />
+[13]<span role='combobox' aria-expanded='false' />
+[14]<label >Doing Business As: />
+[15]<input name='DoingBusinessAs' type='text' value='' />
+[16]<label >Tax Year: />
+[17]<span role='combobox' aria-expanded='false' />
+	[18]<span role='textbox' title='2025'>2025 />
+[19]<button type='button' value='Search'>Search />
+Disclaimer
+Information provided for research purposes only. Legal descriptions and acreage amounts are for appraisal district use only and should be verified prior to using for legal purpose and or documents. Please contact the Appraisal District to verify all information for accuracy.
+Helpful Hints
+Know what you are looking for?
+Find results quickly by selecting the Owner, Address, ID or Advanced search tabs above.
+Seeing too many results?
+Try using the Advanced Search above and add more info to narrow the field.
+Having trouble searching by Address?
+Use a more simple search like just the street name.
+Having trouble searching by Name?
+Use just the first or last name alone.
+... 165 pixels below - scroll or extract content to see more ...
+Current step: 10/100Current date and time: 2025-06-19 20:08
+
+ RESPONSE
+{
+  "current_state": {
+    "evaluation_previous_goal": "Success - Location to perform address search located on Bee CAD's property search page.",
+    "memory": "Successfully accessed search by address feature. Ready to input the address details: '306 Main'. 5 out of 7 steps prepared and in progress.",
+    "next_goal": "Enter '306' in the street number field and 'Main' in the street name field."
+  },
+  "action": [
+    {
+      "click_element_by_index": {
+        "index": 6
+      }
+    },
+    {
+      "input_text": {
+        "index": 16,
+        "text": "306"
+      }
+    },
+    {
+      "input_text": {
+        "index": 17,
+        "text": "Main"
+      }
+    },
+    {
+      "click_element_by_index": {
+        "index": 19
+      }
+    }
+  ]
+}
