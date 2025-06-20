@@ -5,6 +5,7 @@ import shutil
 import time
 import subprocess
 import json
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -14,14 +15,14 @@ from langchain_openai import ChatOpenAI
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Property Search Tool", 
+    page_title="APN Lookup Tool", 
     page_icon="🏠",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-class PropertySearcher:
-    """Property search class that wraps the browser automation logic"""
+class APNSearcher:
+    """APN search class that wraps the browser automation logic"""
     
     def __init__(self):
         self.llm = ChatOpenAI(model="gpt-4o")
@@ -46,9 +47,9 @@ class PropertySearcher:
         except Exception as e:
             return f"⚠️ Profile cleanup warning: {e}"
 
-    async def search_property(self, address, county, state="TX", headless=False):
+    async def search_apn(self, address, county, state="TX", headless=False):
         """
-        Main property search function
+        Main APN search function
         Args:
             address: Property address (e.g., "306 Main St, Tuleta")
             county: County name (e.g., "Bee")
@@ -68,7 +69,7 @@ class PropertySearcher:
         street_number = address_parts[0] if address_parts else "306"
         street_name = " ".join(address_parts[1:]).replace("St,", "").replace("St", "").strip() if len(address_parts) > 1 else "Main"
         
-        # Create dynamic task based on inputs
+        # Create dynamic task based on inputs - FOCUSED ON APN
         task = f"""
         Step 1. Navigate directly to https://publicrecords.netronline.com/state/{state} and select "{county}" from the county list
 
@@ -82,9 +83,9 @@ class PropertySearcher:
         
         step 5.1: if Property address is asked, use "{street_number} {street_name}" 
 
-        Step 6. On the property details page, locate and extract the "APN" or "Geographic ID" or "Parcel Number" (document the exact format, e.g., "57600-00030-05000-000000")
+        Step 6. On the property details page, locate and extract the "APN" or "Geographic ID" or "Parcel Number" - this is the MOST IMPORTANT data to capture (document the exact format, e.g., "57600-00030-05000-000000")
         
-        Step 7: click the row with address matching {address} to view details
+        Step 7: click the row with address matching {address} to view details and confirm the APN number is visible
         """
         
         # Create a unique browser session with custom profile
@@ -102,14 +103,14 @@ class PropertySearcher:
             llm=self.llm,
             browser_session=browser_session,
             use_vision=True,
-            save_conversation_path=f"logs/search_{int(time.time())}"
+            save_conversation_path=f"logs/apn_search_{int(time.time())}"
         )
         
         try:
             result = await agent.run()
             
             # Parse the result to extract structured data
-            parsed_result = self.parse_search_result(str(result), address)
+            parsed_result = self.parse_apn_result(str(result), address)
             
             return {
                 "success": True,
@@ -134,82 +135,84 @@ class PropertySearcher:
             except Exception as e:
                 pass
 
-    def parse_search_result(self, result_text, original_address):
-        """Parse the search result to extract structured property data with focus on APN"""
+    def parse_apn_result(self, result_text, original_address):
+        """Parse the search result to extract APN and property data"""
         
-        # Extract APN/Geographic ID patterns - IMPROVED REGEX
+        # ENHANCED APN EXTRACTION - Multiple patterns to catch different formats
         apn_number = None
-        if any(keyword in result_text for keyword in ["Geographic ID", "APN", "Parcel Number"]):
-            import re
+        
+        # Look for APN patterns in the result text
+        apn_patterns = [
+            # Quoted patterns (most reliable)
+            r"Geographic ID.*?['\"]([0-9-]{15,25})['\"]",
+            r"APN.*?['\"]([0-9-]{15,25})['\"]", 
+            r"Parcel Number.*?['\"]([0-9-]{15,25})['\"]",
+            r"['\"](\d{5}-\d{5}-\d{5}-\d{6})['\"]",
+            r"['\"](\d{21})['\"]",
             
-            # Enhanced patterns to capture full APN numbers
-            patterns = [
-                r"Geographic ID.*?['\"]([0-9-]{15,25})['\"]",  # With quotes
-                r"Geographic ID.*?(\d{5}-\d{5}-\d{5}-\d{6})",   # Standard format with dashes
-                r"Geographic ID.*?(\d{21})",                    # 21-digit format
-                r"APN.*?['\"]([0-9-]{15,25})['\"]",            # APN with quotes
-                r"APN.*?(\d{5}-\d{5}-\d{5}-\d{6})",           # APN standard format
-                r"APN.*?(\d{21})",                             # APN 21-digit
-                r"Parcel Number.*?['\"]([0-9-]{15,25})['\"]",  # Parcel with quotes
-                r"Parcel Number.*?(\d{5}-\d{5}-\d{5}-\d{6})",  # Parcel standard
-                r"Parcel Number.*?(\d{21})",                   # Parcel 21-digit
-                r"'(\d{5}-\d{5}-\d{5}-\d{6})'",              # Any quoted standard format
-                r"'(\d{21})'",                                 # Any quoted 21-digit
-                r"(\d{5}-\d{5}-\d{5}-\d{6})",                # Unquoted standard format
-                r"(\d{21})"                                    # Unquoted 21-digit (last resort)
-            ]
+            # Unquoted patterns
+            r"Geographic ID.*?(\d{5}-\d{5}-\d{5}-\d{6})",
+            r"Geographic ID.*?(\d{21})",
+            r"APN.*?(\d{5}-\d{5}-\d{5}-\d{6})",
+            r"APN.*?(\d{21})",
+            r"Parcel Number.*?(\d{5}-\d{5}-\d{5}-\d{6})",
+            r"Parcel Number.*?(\d{21})",
             
-            for pattern in patterns:
-                matches = re.findall(pattern, result_text)
-                if matches:
-                    # Filter out obvious non-APN numbers (like years, small numbers)
-                    for match in matches:
-                        if len(match) >= 15:  # APN should be at least 15 characters
-                            apn_number = match
-                            break
-                    if apn_number:
+            # Standalone patterns (be more careful with these)
+            r"(\d{5}-\d{5}-\d{5}-\d{6})",
+            r"(\d{21})"
+        ]
+        
+        for pattern in apn_patterns:
+            matches = re.findall(pattern, result_text, re.IGNORECASE)
+            if matches:
+                for match in matches:
+                    # Validate that this looks like a real APN
+                    if len(match) >= 15 and (match.count('-') >= 3 or len(match) == 21):
+                        apn_number = match
                         break
+                if apn_number:
+                    break
         
         # Extract owner information
         owner = None
-        if "Owner" in result_text or "VASQUEZ" in result_text:
-            owner_patterns = [
-                r"Owner.*?([A-Z][A-Z\s]+[A-Z])",
-                r"(VASQUEZ[A-Z\s]+)",
-                r"Owner Name.*?([A-Z][A-Z\s]+)"
-            ]
-            for pattern in owner_patterns:
-                match = re.search(pattern, result_text)
-                if match:
-                    owner = match.group(1).strip()
-                    break
+        owner_patterns = [
+            r"Owner Name.*?([A-Z][A-Z\s]+[A-Z])",
+            r"Owner.*?([A-Z][A-Z\s]+[A-Z])",
+            r"(VASQUEZ[A-Z\s]+)",
+        ]
+        for pattern in owner_patterns:
+            match = re.search(pattern, result_text)
+            if match:
+                owner = match.group(1).strip()
+                break
         
         # Extract appraised value
         value = None
         value_patterns = [
-            r"\$[\d,]+",
+            r"Appraised Value.*?(\$[\d,]+)",
             r"Appraised.*?(\$[\d,]+)",
-            r"Value.*?(\$[\d,]+)"
+            r"Value.*?(\$[\d,]+)",
+            r"(\$[\d,]+)"
         ]
         for pattern in value_patterns:
             match = re.search(pattern, result_text)
             if match:
-                value = match.group(0) if not match.groups() else match.group(1)
+                value = match.group(1) if match.groups() else match.group(0)
                 break
         
         return {
             "address": original_address,
             "apn_number": apn_number or "APN not found - check raw result",
-            "geographic_id": apn_number or "Not found",  # Keep for backward compatibility
             "owner": owner or "Not found",
             "appraised_value": value or "Not found",
             "search_timestamp": datetime.now().isoformat(),
-            "raw_search_text": result_text[:500] + "..." if len(result_text) > 500 else result_text  # For debugging
+            "search_status": "SUCCESS" if apn_number else "APN_NOT_FOUND"
         }
 
 def save_search_history(search_data):
     """Save search history to a JSON file"""
-    history_file = "search_history.json"
+    history_file = "logs/apn_search_history.json"
     
     try:
         if os.path.exists(history_file):
@@ -231,7 +234,7 @@ def save_search_history(search_data):
 
 def load_search_history():
     """Load search history from JSON file"""
-    history_file = "search_history.json"
+    history_file = "apn_search_history.json"
     
     try:
         if os.path.exists(history_file):
@@ -248,7 +251,7 @@ def main():
     
     # Sidebar configuration
     st.sidebar.header("🔧 Search Parameters")
-    st.sidebar.markdown("Configure your property search below:")
+    st.sidebar.markdown("Configure your APN search below:")
     
     # Input fields in sidebar
     address = st.sidebar.text_input(
@@ -289,51 +292,54 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown("#### 🔍 Property Search")
+        st.markdown("#### 🔍 APN Search")
         
-        if st.button("🚀 Search Property", type="primary", use_container_width=True):
+        if st.button("🚀 Find APN Number", type="primary", use_container_width=True):
             if address and county:
                 # Create progress indicators
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                with st.spinner("🤖 AI Agent is searching property records..."):
+                with st.spinner("🤖 AI Agent is searching for APN..."):
                     try:
                         # Update progress
                         progress_bar.progress(10)
                         status_text.text("Initializing browser automation...")
                         
-                        # Run the property search
-                        searcher = PropertySearcher()
+                        # Run the APN search
+                        searcher = APNSearcher()
                         
                         progress_bar.progress(30)
                         status_text.text("Navigating to property records website...")
                         
                         result = asyncio.run(
-                            searcher.search_property(address, county, state, headless_mode)
+                            searcher.search_apn(address, county, state, headless_mode)
                         )
                         
                         progress_bar.progress(90)
-                        status_text.text("Processing search results...")
+                        status_text.text("Processing APN search results...")
                         
                         if result["success"]:
                             progress_bar.progress(100)
-                            status_text.text("✅ Search completed successfully!")
+                            status_text.text("✅ APN search completed successfully!")
                             
-                            st.success("✅ Property Found!")
-                            
-                            # Display results in a nice format
                             property_data = result["data"]
                             
-                            # Main result card
-                            st.markdown("### 📋 Property Information")
+                            if property_data.get('search_status') == 'SUCCESS':
+                                st.success("✅ APN Number Found!")
+                            else:
+                                st.warning("⚠️ APN search completed but APN number not clearly identified")
+                            
+                            # Display results in a nice format
+                            st.markdown("### 📋 Property APN Information")
                             
                             col_a, col_b = st.columns(2)
                             
                             with col_a:
                                 st.metric(
-                                    label="🆔 Geographic ID/APN",
-                                    value=property_data.get('geographic_id', 'Not found')
+                                    label="🆔 APN Number",
+                                    value=property_data.get('apn_number', 'Not found'),
+                                    help="Assessor's Parcel Number - Primary identifier"
                                 )
                                 st.metric(
                                     label="🏠 Address",
@@ -350,7 +356,7 @@ def main():
                                     value=property_data.get('appraised_value', 'Not found')
                                 )
                             
-                            # JSON view
+                            # JSON view with APN focus
                             with st.expander("📄 Detailed Results (JSON)"):
                                 st.json(property_data)
                             
@@ -361,16 +367,17 @@ def main():
                                     for msg in result.get("cleanup_messages", []):
                                         st.text(f"• {msg}")
                                     
-                                    st.text("Raw Result:")
-                                    st.text(result.get("raw_result", "No raw result"))
+                                    st.text("Raw Result (first 1000 chars):")
+                                    raw_result = result.get("raw_result", "No raw result")
+                                    st.text(raw_result[:1000] + "..." if len(raw_result) > 1000 else raw_result)
                             
                             # Save to history
                             save_search_history(property_data)
                             
                         else:
                             progress_bar.progress(100)
-                            status_text.text("❌ Search failed")
-                            st.error(f"❌ Search failed: {result.get('error', 'Unknown error')}")
+                            status_text.text("❌ APN search failed")
+                            st.error(f"❌ APN search failed: {result.get('error', 'Unknown error')}")
                             
                             if show_debug:
                                 with st.expander("🐛 Debug Information"):
@@ -393,7 +400,7 @@ def main():
                 st.warning("⚠️ Please enter both address and county")
     
     with col2:
-        st.markdown("#### 📊 Search History")
+        st.markdown("#### 📊 APN Search History")
         
         if st.button("🔄 Refresh History", use_container_width=True):
             st.rerun()
@@ -402,16 +409,17 @@ def main():
         history = load_search_history()
         
         if history:
-            st.markdown(f"**Recent Searches ({len(history)})**")
+            st.markdown(f"**Recent APN Searches ({len(history)})**")
             
             for i, search in enumerate(reversed(history[-5:])):  # Show last 5
                 with st.expander(f"🏠 {search.get('address', 'Unknown')}"):
-                    st.text(f"Geographic ID: {search.get('geographic_id', 'N/A')}")
+                    st.text(f"APN: {search.get('apn_number', 'N/A')}")
                     st.text(f"Owner: {search.get('owner', 'N/A')}")
                     st.text(f"Value: {search.get('appraised_value', 'N/A')}")
+                    st.text(f"Status: {search.get('search_status', 'N/A')}")
                     st.text(f"Date: {search.get('search_timestamp', 'N/A')}")
         else:
-            st.info("No search history yet. Run your first search!")
+            st.info("No APN search history yet. Run your first search!")
     
     # Footer
     st.markdown("---")
@@ -420,7 +428,7 @@ def main():
         <div style='text-align: center; color: #666;'>
         🤖 Powered by AI Browser Automation | 
         Built with Streamlit & browser-use | 
-        🏠 Property Search Tool v1.0
+        🏠 APN Lookup Tool v2.0
         </div>
         """, 
         unsafe_allow_html=True

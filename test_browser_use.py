@@ -53,7 +53,7 @@ async def main():
     
     step 5.1: if Property addess is asked, use "306 Main" 
 
-    Step 6. On the property details page, locate and extract the "Geographic ID" or "APN" or "Parcel Number" (document the exact format, e.g., "57600-00000")
+    Step 6. On the property details page, locate and extract the "Geographic ID" or "APN" or "Parcel Number" (document the exact format, e.g., "57600.......-00000")
     
     Step 7: click the row with address matching 306 Main St, Tuleta, TX 78162 to view details
     
