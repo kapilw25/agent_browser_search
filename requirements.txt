@@ -1,0 +1,22 @@
+# Browser-use core package with memory functionality
+browser-use[memory]
+
+# CLI functionality for interactive testing
+browser-use[cli]
+
+# LLM providers - choose based on your preference
+langchain-openai
+langchain-anthropic
+langchain-google-genai
+
+# Environment management
+python-dotenv
+
+# Playwright for browser automation (will be installed with browser-use)
+playwright
+
+# Additional useful packages for AI agents
+asyncio-throttle
+pydantic
+requests
+aiohttp
