@@ -212,6 +212,9 @@ class APNSearcher:
 
 def save_search_history(search_data):
     """Save search history to a JSON file"""
+     # check if logs directory exists, if not create it
+    os.makedirs("logs", exist_ok=True)
+    
     history_file = "logs/apn_search_history.json"
     
     try:
@@ -234,7 +237,7 @@ def save_search_history(search_data):
 
 def load_search_history():
     """Load search history from JSON file"""
-    history_file = "apn_search_history.json"
+    history_file = "logs/apn_search_history.json"
     
     try:
         if os.path.exists(history_file):
@@ -256,9 +259,9 @@ def main():
     # Input fields in sidebar
     address = st.sidebar.text_input(
         "🏠 Property Address", 
-        placeholder="306 Main St, Tuleta, TX",
-        help="Enter the full property address"
-    )
+        placeholder="306 Main", # instead of "306 Main St, Tuleta"
+        help="Enter house number and initial street name (e.g., '306 Main' or '123 Elm')"
+        )
     
     state = st.sidebar.selectbox(
         "🗺️ State", 
