@@ -8,59 +8,53 @@
 - ✅ **All dependencies** - PyTorch, FAISS, sentence-transformers, etc.
 
 ## Environment Setup
-- 📁 **Virtual Environment**: `venv_browser/`
+- 📁 **Virtual Environment**: `venv_browser/` with Python 3.11.7
 - 🔑 **API Keys**: Configured in `.env` file (OpenAI ready)
 - 🌐 **Browser**: Chromium installed and ready
 
-## Quick Start
+## Installation Steps
 
-### 1. Activate Environment
+### 1. Install Python 3.11 (Required)
 ```bash
+# Install pyenv for Python version management
+curl https://pyenv.run | bash
+
+# Add pyenv to your shell
+export PYENV_ROOT="$HOME/.pyenv"
+[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init - bash)"
+eval "$(pyenv virtualenv-init -)"
+
+# Install Python 3.11.7
+pyenv install 3.11.7
+
+# Set local Python version
+pyenv local 3.11.7
+```
+
+### 2. Create and Activate Virtual Environment
+```bash
+# Create virtual environment with Python 3.11.7
+python -m venv venv_browser
+
+# Activate the environment
 source venv_browser/bin/activate
-# OR use the convenience script:
-./activate_browser_use.sh
 ```
 
-### 2. Run Basic Test
+### 3. Install Dependencies
 ```bash
-python test_browser_use.py
+# Install packages from requirements.txt
+pip install -r requirements.txt
+
+# Install Chromium browser for Playwright
+playwright install chromium --with-deps
 ```
 
-### 3. Try Interactive CLI
+### 4. Run the Application
 ```bash
-browser-use
-# OR
-python -m browser_use.cli
+# Run the Streamlit app
+source venv_browser/bin/activate && streamlit run app3.py
 ```
-
-## CLI Usage Examples
-
-### Interactive Mode
-```bash
-browser-use
-```
-
-### Single Task Mode
-```bash
-browser-use -p "Go to GitHub and search for browser automation tools"
-```
-
-### With Custom Model
-```bash
-browser-use --model gpt-4o --headless
-```
-
-## Configuration Options
-
-### Browser Settings
-- `--headless` - Run without GUI
-- `--window-width 1920 --window-height 1080` - Set window size
-- `--user-data-dir ~/path/to/chrome/profile` - Use existing Chrome profile
-
-### Model Options
-- `--model gpt-4o` - Use GPT-4o (default)
-- `--model claude-3-opus-20240229` - Use Claude
-- `--model gemini-pro` - Use Google Gemini
 
 ## API Keys Setup
 
@@ -74,53 +68,16 @@ ANTHROPIC_API_KEY=your_anthropic_key
 GOOGLE_API_KEY=your_google_key
 ```
 
-## Example Tasks
-
-### Web Automation
-```python
-agent = Agent(
-    task="Go to Amazon and search for 'laptop', then get the first 3 product titles",
-    llm=ChatOpenAI(model="gpt-4o")
-)
-```
-
-### Data Extraction
-```python
-agent = Agent(
-    task="Visit news.ycombinator.com and extract the top 5 story titles",
-    llm=ChatOpenAI(model="gpt-4o")
-)
-```
-
-### Form Interaction
-```python
-agent = Agent(
-    task="Fill out the contact form on example.com with sample data",
-    llm=ChatOpenAI(model="gpt-4o")
-)
-```
-
 ## Troubleshooting
 
 ### Common Issues
-1. **Browser not launching**: Run `playwright install chromium --with-deps`
-2. **API key errors**: Check your `.env` file
-3. **Permission errors**: Make sure scripts are executable (`chmod +x`)
-
-### Debug Mode
-```bash
-browser-use --debug
-```
-
-## Next Steps
-1. 🧪 **Test the basic functionality** with `python test_browser_use.py`
-2. 🎮 **Try the interactive CLI** with `browser-use`
-3. 🚀 **Build your own automation tasks**
-4. 📚 **Check the documentation**: https://docs.browser-use.com/
+1. **Python version**: Make sure you're using Python 3.11.x (required for browser-use[memory])
+2. **Browser not launching**: Run `playwright install chromium --with-deps`
+3. **API key errors**: Check your `.env` file
+4. **Permission errors**: Make sure scripts are executable (`chmod +x`)
 
 ## Resources
 - 📖 [Official Documentation](https://docs.browser-use.com/)
-- 💬 [Discord Community](https://discord.gg/browser-use)
 - 🐙 [GitHub Repository](https://github.com/browser-use/browser-use)
 - ☁️ [Cloud Version](https://browser-use.com/)
 

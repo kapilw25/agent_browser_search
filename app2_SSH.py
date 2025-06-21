@@ -6,6 +6,9 @@ import time
 import subprocess
 import json
 import re
+import sys
+import threading
+from io import StringIO
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -20,6 +23,42 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Create a simple pipe to capture output
+class OutputCapture:
+    def __init__(self):
+        self.output = []
+        self.lock = threading.Lock()
+        
+    def write(self, text):
+        with self.lock:
+            self.output.append(text)
+            # Keep only the last 1000 lines to avoid memory issues
+            if len(self.output) > 1000:
+                self.output = self.output[-1000:]
+        # Also write to the original stdout so we can see in terminal
+        original_stdout.write(text)
+        
+    def get_output(self):
+        with self.lock:
+            return "".join(self.output)
+    
+    def clear(self):
+        with self.lock:
+            self.output = []
+    
+    def flush(self):
+        # Required for stdout compatibility
+        pass
+
+# Global output capture
+output_capture = OutputCapture()
+
+# Store the original stdout
+original_stdout = sys.stdout
+
+# Redirect stdout to our capture
+sys.stdout = output_capture
 
 class APNSearcher:
     """APN search class that wraps the browser automation logic"""
@@ -47,19 +86,29 @@ class APNSearcher:
         except Exception as e:
             return f"⚠️ Profile cleanup warning: {e}"
 
-    async def search_apn(self, address, county, state="TX", headless=False):
+    async def search_apn(self, address, county, state="TX", output_area=None):
         """
         Main APN search function
         Args:
             address: Property address (e.g., "306 Main St, Tuleta")
             county: County name (e.g., "Bee")
             state: State abbreviation (e.g., "TX")
-            headless: Run browser in headless mode
+            output_area: Streamlit container for displaying output
         """
+        # Clear previous output
+        output_capture.clear()
+        
+        # Print some initial info that will be captured
+        print(f"Starting APN search for {address} in {county}, {state}")
+        print("Initializing browser automation...")
+        
+        # Always use headless mode for corporate environments
+        headless = True
         
         # Clean up any existing browser conflicts
         cleanup_msg1 = self.cleanup_browser_processes()
         cleanup_msg2 = self.cleanup_browser_profile()
+        print(f"Browser cleanup: {cleanup_msg1}, {cleanup_msg2}")
         
         # Create logs directory if it doesn't exist
         os.makedirs("logs", exist_ok=True)
@@ -88,6 +137,17 @@ class APNSearcher:
         Step 7: click the row with address matching {address} to view details and confirm the APN number is visible
         """
         
+        # Start a thread to update the output area
+        def update_output():
+            while True:
+                if output_area:
+                    with output_area:
+                        st.code(output_capture.get_output())
+                time.sleep(0.5)
+        
+        update_thread = threading.Thread(target=update_output, daemon=True)
+        update_thread.start()
+        
         # Create a unique browser session with custom profile
         unique_profile = f"profile_{int(time.time())}"
         browser_session = BrowserSession(
@@ -107,7 +167,23 @@ class APNSearcher:
         )
         
         try:
-            result = await agent.run()
+            # Add retry logic
+            max_retries = 3
+            result = None
+            
+            for attempt in range(max_retries):
+                try:
+                    print(f"Starting attempt {attempt+1}/{max_retries}")
+                    result = await agent.run()
+                    print("Agent run completed successfully")
+                    break
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        print(f"Attempt {attempt+1} failed: {str(e)}. Retrying...")
+                        time.sleep(2)  # Wait before retry
+                    else:
+                        print(f"All {max_retries} attempts failed: {str(e)}")
+                        raise
             
             # Parse the result to extract structured data
             parsed_result = self.parse_apn_result(str(result), address)
@@ -120,6 +196,7 @@ class APNSearcher:
             }
             
         except Exception as e:
+            print(f"Search failed: {str(e)}")
             return {
                 "success": False,
                 "error": str(e),
@@ -132,8 +209,9 @@ class APNSearcher:
                 profile_path = os.path.expanduser(f"~/.config/browseruse/profiles/{unique_profile}")
                 if os.path.exists(profile_path):
                     shutil.rmtree(profile_path)
+                    print(f"Cleaned up profile: {unique_profile}")
             except Exception as e:
-                pass
+                print(f"Profile cleanup error: {str(e)}")
 
     def parse_apn_result(self, result_text, original_address):
         """Parse the search result to extract APN and property data"""
@@ -234,6 +312,7 @@ def save_search_history(search_data):
             
     except Exception as e:
         st.error(f"Failed to save search history: {e}")
+        print(f"Failed to save search history: {e}")
 
 def load_search_history():
     """Load search history from JSON file"""
@@ -246,6 +325,7 @@ def load_search_history():
         return []
     except Exception as e:
         st.error(f"Failed to load search history: {e}")
+        print(f"Failed to load search history: {e}")
         return []
 
 def main():
@@ -279,12 +359,6 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.subheader("⚙️ Advanced Options")
     
-    headless_mode = st.sidebar.checkbox(
-        "🖥️ Headless Mode", 
-        value=False,
-        help="Run browser in background (faster but no visual feedback)"
-    )
-    
     show_debug = st.sidebar.checkbox(
         "🐛 Show Debug Info", 
         value=False,
@@ -301,30 +375,35 @@ def main():
             if address and county:
                 # Create progress indicators
                 progress_bar = st.progress(0)
-                status_text = st.empty()
+                progress_text = st.empty()
+                
+                # Create a container for live output
+                st.markdown("### 🖥️ Live Browser Automation Progress")
+                output_area = st.empty()
                 
                 with st.spinner("🤖 AI Agent is searching for APN..."):
                     try:
-                        # Update progress
+                        # Update initial progress
+                        progress_text.text("Initializing browser automation...")
                         progress_bar.progress(10)
-                        status_text.text("Initializing browser automation...")
                         
                         # Run the APN search
                         searcher = APNSearcher()
                         
-                        progress_bar.progress(30)
-                        status_text.text("Navigating to property records website...")
-                        
                         result = asyncio.run(
-                            searcher.search_apn(address, county, state, headless_mode)
+                            searcher.search_apn(
+                                address, 
+                                county, 
+                                state, 
+                                output_area=output_area
+                            )
                         )
                         
-                        progress_bar.progress(90)
-                        status_text.text("Processing APN search results...")
+                        progress_bar.progress(100)
+                        progress_text.text("Processing APN search results...")
                         
                         if result["success"]:
-                            progress_bar.progress(100)
-                            status_text.text("✅ APN search completed successfully!")
+                            progress_text.text("✅ APN search completed successfully!")
                             
                             property_data = result["data"]
                             
@@ -379,7 +458,7 @@ def main():
                             
                         else:
                             progress_bar.progress(100)
-                            status_text.text("❌ APN search failed")
+                            progress_text.text("❌ APN search failed")
                             st.error(f"❌ APN search failed: {result.get('error', 'Unknown error')}")
                             
                             if show_debug:
@@ -388,14 +467,11 @@ def main():
                                     for msg in result.get("cleanup_messages", []):
                                         st.text(f"• {msg}")
                         
-                        # Clear progress indicators
-                        progress_bar.empty()
-                        status_text.empty()
-                        
                     except Exception as e:
-                        progress_bar.empty()
-                        status_text.empty()
+                        progress_bar.progress(100)
+                        progress_text.text("❌ Unexpected error occurred")
                         st.error(f"❌ Unexpected error: {str(e)}")
+                        print(f"Unexpected error: {str(e)}")
                         
                         if show_debug:
                             st.exception(e)
