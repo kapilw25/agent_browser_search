@@ -47,14 +47,15 @@ class APNSearcher:
         except Exception as e:
             return f"⚠️ Profile cleanup warning: {e}"
 
-    async def search_apn(self, address, county, state="TX", headless=False):
+    async def search_apn(self, address, county, state="TX", headless=True, verification_prompt=None):
         """
         Main APN search function
         Args:
             address: Property address (e.g., "306 Main St, Tuleta")
             county: County name (e.g., "Bee")
             state: State abbreviation (e.g., "TX")
-            headless: Run browser in headless mode
+            headless: Run browser in headless mode (defaults to True)
+            verification_prompt: Optional text to verify against property data
         """
         
         # Clean up any existing browser conflicts
@@ -70,7 +71,9 @@ class APNSearcher:
         street_name = " ".join(address_parts[1:]).replace("St,", "").replace("St", "").strip() if len(address_parts) > 1 else "Main"
         
         # Create dynamic task based on inputs - FOCUSED ON APN
-        task = f"""
+
+        # Create dynamic task for APN search
+        apn_search_task = f"""
         Step 1. Navigate directly to https://publicrecords.netronline.com/state/{state} and select "{county}" from the county list
 
         Step 2. if "Name" column contains "Appraisal District" >> in that row click "Go to Data Online" button [scroll UP & DOWN, to make sure that you are in the correct row whose "Name" column contains "Appraisal District"]
@@ -88,35 +91,69 @@ class APNSearcher:
         Step 7: click the row with address matching {address} to view details and confirm the APN number is visible
         """
         
-        # Create a unique browser session with custom profile
-        unique_profile = f"profile_{int(time.time())}"
-        browser_session = BrowserSession(
-            browser_type="chromium",
-            user_data_dir=f"~/.config/browseruse/profiles/{unique_profile}",
-            keep_alive=False,
-            headless=headless
-        )
-        
-        # Create an agent with detailed configuration
-        agent = Agent(
-            task=task,
-            llm=self.llm,
-            browser_session=browser_session,
-            use_vision=True,
-            save_conversation_path=f"logs/apn_search_{int(time.time())}"
-        )
-        
         try:
-            result = await agent.run()
+            # Create a shared browser session
+            unique_profile = f"profile_{int(time.time())}"
+            shared_session = BrowserSession(
+                browser_type="chromium",
+                user_data_dir=f"~/.config/browseruse/profiles/{unique_profile}",
+                keep_alive=True,  # Keep browser open between agents
+                headless=headless  # Use the headless parameter from UI
+            )
+            await shared_session.start()  # Start session manually
             
-            # Parse the result to extract structured data
-            parsed_result = self.parse_apn_result(str(result), address)
+            # Agent 1: Find APN
+            agent1 = Agent(
+                task=apn_search_task,
+                llm=self.llm,
+                browser_session=shared_session,
+                use_vision=True,
+                save_conversation_path=f"logs/apn_search_{int(time.time())}"
+            )
+            apn_result = await agent1.run()
+            
+            # Parse initial results
+            initial_parsed_result = self.parse_apn_result(str(apn_result), address)
+            
+            # Only run verification if we found an APN and have a verification prompt
+            if initial_parsed_result.get("apn_number") != "APN not found - check raw result" and verification_prompt:
+                # Agent 2: Verify information
+                verification_task = f"""
+                You are already on the property details page for {address}.
+                
+                Your task is to carefully examine the "Legal Description" field and find information that matches or is similar to: "{verification_prompt}"
+                
+                Focus specifically on the Legal Description section, but also check other fields if necessary.
+                
+                Document exactly what you find and where you found it.
+                """
+                
+                agent2 = Agent(
+                    task=verification_task,
+                    llm=self.llm,
+                    browser_session=shared_session,  # Re-use the same session
+                    use_vision=True,
+                    save_conversation_path=f"logs/verification_{int(time.time())}"
+                )
+                verification_result = await agent2.run()
+                
+                # Parse verification results and merge with initial results
+                verification_info = self.parse_verification_result(str(verification_result))
+                initial_parsed_result["verification_info"] = verification_info
+                initial_parsed_result["verification_prompt"] = verification_prompt
+            elif verification_prompt:
+                # If we have a verification prompt but no APN, add placeholder verification info
+                initial_parsed_result["verification_info"] = "Not found - APN search failed"
+                initial_parsed_result["verification_prompt"] = verification_prompt
+            
+            # Close the shared session
+            await shared_session.close()
             
             return {
                 "success": True,
-                "data": parsed_result,
+                "data": initial_parsed_result,
                 "cleanup_messages": [cleanup_msg1, cleanup_msg2],
-                "raw_result": str(result)
+                "raw_result": str(apn_result) + (f"\n\nVERIFICATION:\n{str(verification_result)}" if 'verification_result' in locals() else "")
             }
             
         except Exception as e:
@@ -135,6 +172,30 @@ class APNSearcher:
             except Exception as e:
                 pass
 
+    def parse_verification_result(self, result_text):
+        """Parse the verification result to extract relevant information"""
+        
+        # Look for legal description or similar information
+        verification_info = "Not found"
+        
+        # Patterns to extract verification information
+        patterns = [
+            r"Legal Description.*?[\"']([^\"']+)[\"']",
+            r"Legal Description[:\s]+([^\n\.]+)",
+            r"found.*?[\"']([^\"']+)[\"'].*?Legal Description",
+            r"Legal Description.*?contains.*?[\"']([^\"']+)[\"']",
+            r"matching information.*?[\"']([^\"']+)[\"']",
+            r"verification.*?[\"']([^\"']+)[\"']",
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, result_text, re.IGNORECASE | re.DOTALL)
+            if match:
+                verification_info = match.group(1).strip()
+                break
+        
+        return verification_info
+        
     def parse_apn_result(self, result_text, original_address):
         """Parse the search result to extract APN and property data"""
         
@@ -275,13 +336,21 @@ def main():
         help="Enter the county name"
     )
     
+    verification_prompt = st.sidebar.selectbox(
+        "🔍 Verification Info", 
+        ["Block 3, Lot 5 & 6", "TULETA BLK 3 LOTS 5 & 6", "VASQUEZ LETRICIA GAYLE", "306 MAIN"],
+        index=0,
+        help="Select information to verify against property data"
+    )
+    
     # Advanced options
     st.sidebar.markdown("---")
     st.sidebar.subheader("⚙️ Advanced Options")
     
+    # Single source of truth for headless mode - defaults to True to avoid XServer errors
     headless_mode = st.sidebar.checkbox(
         "🖥️ Headless Mode", 
-        value=False,
+        value=True,
         help="Run browser in background (faster but no visual feedback)"
     )
     
@@ -316,7 +385,7 @@ def main():
                         status_text.text("Navigating to property records website...")
                         
                         result = asyncio.run(
-                            searcher.search_apn(address, county, state, headless_mode)
+                            searcher.search_apn(address, county, state, headless_mode, verification_prompt)
                         )
                         
                         progress_bar.progress(90)
@@ -358,6 +427,12 @@ def main():
                                     label="💰 Appraised Value",
                                     value=property_data.get('appraised_value', 'Not found')
                                 )
+                            
+                            # Display verification results if available
+                            if 'verification_info' in property_data:
+                                st.markdown("### 🔍 Verification Results")
+                                st.info(f"**Verified against:** {property_data.get('verification_prompt', 'N/A')}")
+                                st.success(f"**Found:** {property_data.get('verification_info', 'Not found')}")
                             
                             # JSON view with APN focus
                             with st.expander("📄 Detailed Results (JSON)"):
@@ -421,6 +496,12 @@ def main():
                     st.text(f"Value: {search.get('appraised_value', 'N/A')}")
                     st.text(f"Status: {search.get('search_status', 'N/A')}")
                     st.text(f"Date: {search.get('search_timestamp', 'N/A')}")
+                    
+                    # Display verification information if available
+                    if 'verification_info' in search:
+                        st.text(f"Verification: {search.get('verification_info', 'N/A')}")
+                        if search.get('verification_prompt'):
+                            st.text(f"Verified against: {search.get('verification_prompt', 'N/A')}")
         else:
             st.info("No APN search history yet. Run your first search!")
     
@@ -431,7 +512,7 @@ def main():
         <div style='text-align: center; color: #666;'>
         🤖 Powered by AI Browser Automation | 
         Built with Streamlit & browser-use | 
-        🏠 APN Lookup Tool v1.0
+        🏠 APN Lookup Tool v4.0
         </div>
         """, 
         unsafe_allow_html=True

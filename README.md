@@ -53,7 +53,7 @@ playwright install chromium --with-deps
 ### 4. Run the Application
 ```bash
 # Run the Streamlit app
-source venv_browser/bin/activate && streamlit run app3.py
+source venv_browser/bin/activate && streamlit run app1_local.py
 ```
 
 ## API Keys Setup
