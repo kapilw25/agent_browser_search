@@ -1,16 +1,96 @@
-# Browser-Use Setup Complete! 🎉
+# Browser-Use Multi-Agent Workflow 🤖🔍
 
-## What's Installed
-- ✅ **browser-use[memory]** - Core package with memory functionality
-- ✅ **browser-use[cli]** - Interactive CLI interface
-- ✅ **Chromium browser** - Playwright-managed browser
-- ✅ **LangChain integrations** - OpenAI, Anthropic, Google AI support
-- ✅ **All dependencies** - PyTorch, FAISS, sentence-transformers, etc.
+This project demonstrates the power of multi-agent AI workflows for property data retrieval and verification using browser automation.
+
+## Multi-Agent Architecture
+
+### Single Agent vs Multi-Agent Workflow
+This project showcases two approaches to browser automation:
+
+1. **Single Agent (app1_local.py)**: 
+   - One AI agent performs the entire task
+   - Searches for property by address
+   - Extracts APN and basic property information
+   - Simple but limited to one task per execution
+
+2. **Multi-Agent Workflow (app4_local.py)**:
+   - Primary agent searches for property and extracts APN
+   - Secondary agent verifies property details against known information
+   - Shared browser session between agents for efficiency
+   - Enhanced data validation and verification
+
+### Key Multi-Agent Features
+
+- **Shared Browser Session**: Both agents operate in the same browser context
+- **Sequential Task Execution**: First agent finds data, second agent verifies it
+- **Specialized Roles**: Each agent has a focused task for better performance
+- **Data Handoff**: Results from first agent inform the second agent's task
+- **Verification Logic**: Second agent validates data against expected values
+
+## Application Screenshots
+
+### Basic Single-Agent Workflow (app1_local.py)
+![Basic APN Lookup Tool](SS/app1_output.png)
+*Screenshot of streamlit app after successful execution of app1_local.py - Single agent retrieves APN only*
+
+### Advanced Multi-Agent Workflow (app4_local.py)
+![Advanced APN Lookup Tool with Verification](SS/app4_output.png)
+*Screenshot of streamlit app after successful execution of app4_local.py - Two agents work together to retrieve and verify property data*
+
+## Technical Implementation
+
+### Multi-Agent Browser Session Management
+```python
+# Create a shared browser session
+shared_session = BrowserSession(
+    browser_type="chromium",
+    user_data_dir=f"~/.config/browseruse/profiles/{unique_profile}",
+    keep_alive=True,  # Keep browser open between agents
+    headless=headless
+)
+await shared_session.start()  # Start session manually
+
+# Agent 1: Find APN
+agent1 = Agent(
+    task=apn_search_task,
+    llm=self.llm,
+    browser_session=shared_session,  # Use shared session
+    use_vision=True
+)
+apn_result = await agent1.run()
+
+# Agent 2: Verify information
+agent2 = Agent(
+    task=verification_task,
+    llm=self.llm,
+    browser_session=shared_session,  # Reuse the same session
+    use_vision=True
+)
+verification_result = await agent2.run()
+
+# Close the shared session when done
+await shared_session.close()
+```
+
+### Agent Task Specialization
+Each agent has a specialized task:
+
+1. **APN Search Agent**:
+   - Navigates to county property records
+   - Searches by address
+   - Extracts APN and property details
+
+2. **Verification Agent**:
+   - Examines legal description and property details
+   - Matches against expected information
+   - Confirms property identity
 
 ## Environment Setup
+
 - 📁 **Virtual Environment**: `venv_browser/` with Python 3.11.7
 - 🔑 **API Keys**: Configured in `.env` file (OpenAI ready)
 - 🌐 **Browser**: Chromium installed and ready
+- 🤖 **LLM**: GPT-4o for both agents
 
 ## Installation Steps
 
@@ -50,36 +130,27 @@ pip install -r requirements.txt
 playwright install chromium --with-deps
 ```
 
-### 4. Run the Application
+### 4. Run the Applications
 ```bash
-# Run the Streamlit app
+# Run the single-agent app
 source venv_browser/bin/activate && streamlit run app1_local.py
+
+# Run the multi-agent app
+source venv_browser/bin/activate && streamlit run app4_local.py
 ```
 
 ## API Keys Setup
 
 Add your API keys to `.env`:
 ```bash
-# Already configured
+# Required for both agents
 OPENAI_API_KEY=your_key_here
-
-# Add others as needed
-ANTHROPIC_API_KEY=your_anthropic_key
-GOOGLE_API_KEY=your_google_key
 ```
 
-## Troubleshooting
-
-### Common Issues
-1. **Python version**: Make sure you're using Python 3.11.x (required for browser-use[memory])
-2. **Browser not launching**: Run `playwright install chromium --with-deps`
-3. **API key errors**: Check your `.env` file
-4. **Permission errors**: Make sure scripts are executable (`chmod +x`)
-
 ## Resources
-- 📖 [Official Documentation](https://docs.browser-use.com/)
+- 📖 [browser-use Documentation](https://docs.browser-use.com/)
 - 🐙 [GitHub Repository](https://github.com/browser-use/browser-use)
 - ☁️ [Cloud Version](https://browser-use.com/)
 
 ---
-**Status**: ✅ Ready to use! Your browser automation environment is fully configured.
+**Status**: ✅ Ready to use! Your multi-agent browser automation workflow is fully configured.
