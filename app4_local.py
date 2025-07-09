@@ -121,11 +121,19 @@ class APNSearcher:
                 verification_task = f"""
                 You are already on the property details page for {address}.
                 
-                Your task is to carefully examine the "Legal Description" field and find information that matches or is similar to: "{verification_prompt}"
+                CRITICAL TASK: You must find and extract the EXACT TEXT from the Legal Description field.
                 
-                Focus specifically on the Legal Description section, but also check other fields if necessary.
+                Follow these steps precisely:
+                1. Look for a field labeled "Legal Description" on the page
+                2. Read the EXACT text content of this field (not your interpretation of it)
+                3. Copy the EXACT text value - for example: "TULETA BLK 3 LOTS 5 & 6"
+                4. Report it using this format: "Legal Description: [exact text]"
                 
-                Document exactly what you find and where you found it.
+                DO NOT say "field contains" or describe what you see - you must extract and report the EXACT TEXT VALUE.
+                
+                After reporting the exact text, you can then note if it matches or is similar to: "{verification_prompt}"
+                
+                Remember: Your primary task is to extract the EXACT TEXT from the Legal Description field.
                 """
                 
                 agent2 = Agent(
@@ -175,24 +183,45 @@ class APNSearcher:
     def parse_verification_result(self, result_text):
         """Parse the verification result to extract relevant information"""
         
-        # Look for legal description or similar information
+        # Default value if nothing is found
         verification_info = "Not found"
         
-        # Patterns to extract verification information
-        patterns = [
-            r"Legal Description.*?[\"']([^\"']+)[\"']",
+        # Primary patterns - looking for the exact format we requested
+        primary_patterns = [
+            r"Legal Description:\s*[\"']([^\"']+)[\"']",
+            r"Legal Description[:\s]+[\"']([^\"']+)[\"']",
+        ]
+        
+        # Secondary patterns - more flexible matching
+        secondary_patterns = [
             r"Legal Description[:\s]+([^\n\.]+)",
             r"found.*?[\"']([^\"']+)[\"'].*?Legal Description",
             r"Legal Description.*?contains.*?[\"']([^\"']+)[\"']",
-            r"matching information.*?[\"']([^\"']+)[\"']",
-            r"verification.*?[\"']([^\"']+)[\"']",
+            r"Legal Description.*?shows.*?[\"']([^\"']+)[\"']",
+            r"Legal Description.*?is.*?[\"']([^\"']+)[\"']",
+            r"Legal Description.*?reads.*?[\"']([^\"']+)[\"']",
+            r"Legal Description.*?states.*?[\"']([^\"']+)[\"']",
+            r"Legal Description.*?field.*?[\"']([^\"']+)[\"']",
         ]
         
-        for pattern in patterns:
+        # Try primary patterns first (most reliable)
+        for pattern in primary_patterns:
             match = re.search(pattern, result_text, re.IGNORECASE | re.DOTALL)
             if match:
-                verification_info = match.group(1).strip()
-                break
+                extracted_text = match.group(1).strip()
+                if extracted_text and len(extracted_text) > 5 and extracted_text.lower() != "field contains":
+                    verification_info = extracted_text
+                    break
+        
+        # If primary patterns didn't work, try secondary patterns
+        if verification_info == "Not found":
+            for pattern in secondary_patterns:
+                match = re.search(pattern, result_text, re.IGNORECASE | re.DOTALL)
+                if match:
+                    extracted_text = match.group(1).strip()
+                    if extracted_text and len(extracted_text) > 5 and extracted_text.lower() != "field contains":
+                        verification_info = extracted_text
+                        break
         
         return verification_info
         
