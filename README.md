@@ -27,6 +27,100 @@ This project showcases two approaches to browser automation:
 - **Data Handoff**: Results from first agent inform the second agent's task
 - **Verification Logic**: Second agent validates data against expected values
 
+## Detailed Multi-Agent System Design
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                          STREAMLIT USER INTERFACE                             │
+│                                                                               │
+│  ┌─────────────────────────┐                    ┌──────────────────────────┐  │
+│  │   Input Parameters      │                    │    Results Display       │  │
+│  │                         │                    │                          │  │
+│  │ ┌─────────────────────┐ │                    │ ┌────────────────────┐   │  │
+│  │ │ - Property Address  │ │                    │ │ - APN Number       │   │  │
+│  │ │ - State             │ │                    │ │ - Property Owner   │   │  │
+│  │ │ - County            │ │                    │ │ - Property Address │   │  │
+│  │ │ - Verification Info │ │                    │ │ - Appraised Value │   │  │
+│  │ └─────────────────────┘ │                    │ └────────────────────┘   │  │
+│  └─────────────────────────┘                    │ ┌────────────────────┐   │  │
+│                                                 │ │ Verification       │   │  │
+│                                                 │ │ - Expected Info    │   │  │
+│                                                 │ │ - Found Info       │   │  │
+│                                                 │ │ - Semantic Match   │   │  │
+│                                                 │ └────────────────────┘   │  │
+│                                                 └──────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                         MULTI-AGENT CONTROLLER                                │
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                         │  │
+│  │  1. Initialize shared browser session                                   │  │
+│  │  2. Configure Agent 1 with search task                                  │  │
+│  │  3. Execute Agent 1 and collect results                                 │  │
+│  │  4. Configure Agent 2 with verification task + Agent 1 results          │  │
+│  │  5. Execute Agent 2 and collect verification results                    │  │
+│  │  6. Close shared browser session                                        │  │
+│  │  7. Return combined results to UI                                       │  │
+│  │                                                                         │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+                │                                           │
+                ▼                                           ▼
+┌─────────────────────────────────┐         ┌─────────────────────────────────┐
+│         AGENT 1: APN SEARCH     │         │     AGENT 2: VERIFICATION       │
+│                                 │         │                                 │
+│  ┌─────────────────────────┐    │         │  ┌─────────────────────────┐    │
+│  │ Task Definition:        │    │         │  │ Task Definition:        │    │
+│  │ - Navigate to county    │    │         │  │ - Access property page  │    │
+│  │   property search       │    │         │  │   using APN from Agent 1 │    │
+│  │ - Input address/location│    │         │  │ - Extract legal         │    │
+│  │ - Submit search form    │    │         │  │   description           │    │
+│  │ - Extract APN number    │    │         │  │ - Compare with expected │    │
+│  │ - Extract basic property│    │         │  │   verification info     │    │
+│  │   details              │    │         │  │ - Perform semantic      │    │
+│  │                         │    │         │  │   matching              │    │
+│  └─────────────────────────┘    │         │  └─────────────────────────┘    │
+│                                 │         │                                 │
+└─────────────────────────────────┘         └─────────────────────────────────┘
+                │                                           │
+                └───────────────┬───────────────────────────┘
+                                ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                         SHARED BROWSER SESSION                                │
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                         │  │
+│  │  - Chromium browser instance                                           │  │
+│  │  - Persistent user profile                                             │  │
+│  │  - Shared cookies and session state                                    │  │
+│  │  - Visual processing capabilities                                       │  │
+│  │  - DOM interaction methods                                             │  │
+│  │                                                                         │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                              LLM INTEGRATION                                  │
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                         │  │
+│  │  - GPT-4o model for both agents                                        │  │
+│  │  - Vision capabilities for screenshot analysis                          │  │
+│  │  - Task planning and execution                                          │  │
+│  │  - Natural language understanding of property descriptions              │  │
+│  │  - Semantic matching for verification                                   │  │
+│  │                                                                         │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Application Screenshots
 
 ### Basic Single-Agent Workflow (app1_local.py)
@@ -34,7 +128,7 @@ This project showcases two approaches to browser automation:
 *Screenshot of streamlit app after successful execution of app1_local.py - Single agent retrieves APN only*
 
 ### Advanced Multi-Agent Workflow (app4_local.py)
-![Advanced APN Lookup Tool with Verification](SS/app4_output.png)
+![Advanced APN Lookup Tool with Verification](SS/app4_output_2.png)
 *Screenshot of streamlit app after successful execution of app4_local.py - Two agents work together to retrieve and verify property data*
 
 ## Technical Implementation

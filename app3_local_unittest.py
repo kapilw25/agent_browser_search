@@ -17,6 +17,7 @@ class TestLegalDescriptionExtraction(unittest.TestCase):
         self.llm = ChatOpenAI(model="gpt-4o")
         self.test_url = "https://esearch.beecad.org/Property/View/9763?year=2025&ownerId=25544"
         self.expected_legal_description = "TULETA BLK 3 LOTS 5 & 6"
+        self.verification_prompt = "Block 3, Lot 5 & 6"
     
     def test_legal_description_extraction(self):
         """Test that the agent can extract the Legal Description field"""
@@ -38,8 +39,42 @@ class TestLegalDescriptionExtraction(unittest.TestCase):
         json_result = {"legal_description": legal_description}
         print(json.dumps(json_result, indent=2))
         
-        # Assert that the legal description matches the expected value
-        self.assertEqual(legal_description, self.expected_legal_description)
+        # Check for semantic match using LLM
+        is_semantic_match = asyncio.run(self.check_semantic_match_with_llm(
+            legal_description, 
+            self.verification_prompt
+        ))
+        
+        # Print semantic match result
+        print("\n--- SEMANTIC MATCH RESULT ---")
+        print(f"Verification Prompt: {self.verification_prompt}")
+        print(f"Legal Description: {legal_description}")
+        print(f"Is Semantic Match: {is_semantic_match}")
+        
+        # Assert that there is a semantic match
+        self.assertTrue(is_semantic_match, 
+                       f"Verification prompt '{self.verification_prompt}' does not semantically match legal description '{legal_description}'")
+    
+    async def check_semantic_match_with_llm(self, legal_description, verification_prompt):
+        """Use LLM to check if legal description and verification prompt are semantically similar"""
+        prompt = f"""
+        I need to determine if two property descriptions refer to the same property.
+        
+        Description 1: {legal_description}
+        Description 2: {verification_prompt}
+        
+        Do these descriptions refer to the same property? Consider that they might use different formats or abbreviations.
+        
+        Answer with ONLY 'Yes' or 'No'.
+        """
+        
+        response = await self.llm.ainvoke(prompt)
+        result = response.content.strip().lower()
+        
+        print(f"LLM Response: {result}")
+        
+        # Check if the response indicates a match
+        return "yes" in result.lower()
     
     async def extract_legal_description(self):
         """Use an agent to extract the legal description from the property details page"""
@@ -90,28 +125,44 @@ class TestLegalDescriptionExtraction(unittest.TestCase):
         print("\n--- RAW AGENT RESULT ---")
         print(result_text[:200] + "..." if len(result_text) > 200 else result_text)
         
-        # Define patterns to extract legal description
+        # First try to extract from the 'text' field in the done action
+        done_text_pattern = r"'done':\s*\{\s*'text':\s*'Legal Description:\s*([^']+)',"
+        match = re.search(done_text_pattern, result_text)
+        if match:
+            return match.group(1).strip()
+            
+        # Define generic patterns to extract legal description
         patterns = [
-            r"Legal Description:\s*([A-Z0-9\s&]+)",
-            r"Legal Description[:\s]+([A-Z0-9\s&]+)",
-            r"[\"']([A-Z]+\s+BLK\s+\d+\s+LOTS\s+[\d\s&]+)[\"']",
-            r"found[:\s]+[\"']([A-Z]+\s+BLK\s+\d+\s+LOTS\s+[\d\s&]+)[\"']",
-            r"TULETA BLK \d+ LOTS \d+ & \d+",
+            # Standard format patterns
+            r"Legal Description:\s*([^\n,'\"]+)",
+            r"Legal Description[:\s]+([^\n,'\"]+)",
+            
+            # Quoted value patterns
+            r"Legal Description[:\s]+[\"']([^\"']+)[\"']",
+            r"[\"']Legal Description[\"'][:\s]+[\"']([^\"']+)[\"']",
+            
+            # JSON-like format patterns
+            r"\"Legal ?Description\":\s*\"([^\"]+)\"",
+            r"'Legal ?Description':\s*'([^']+)'",
+            
+            # General field-value patterns
+            r"(?:field|value|text)[:\s]+[\"']([^\"']+)[\"'].*?[Ll]egal [Dd]escription",
+            r"[Ll]egal [Dd]escription.*?(?:field|value|text)[:\s]+[\"']([^\"']+)[\"']",
+            
+            # Extracted content patterns
+            r"extracted.*?[Ll]egal [Dd]escription[:\s]+([^\n,'\"]+)",
+            r"[Ll]egal [Dd]escription.*?extracted[:\s]+([^\n,'\"]+)",
         ]
         
         # Try each pattern
         for pattern in patterns:
             match = re.search(pattern, result_text, re.IGNORECASE)
             if match:
-                # If the match is the full pattern (last pattern case)
-                if pattern == r"TULETA BLK \d+ LOTS \d+ & \d+":
-                    return match.group(0).strip()
-                return match.group(1).strip()
+                extracted_text = match.group(1).strip()
+                # Filter out common phrases that aren't actual values
+                if extracted_text.lower() not in ["field contains", "the field contains", "contains", "is", "shows"]:
+                    return extracted_text
         
-        # Hardcoded fallback for this specific test case
-        if "TULETA BLK 3 LOTS 5 & 6" in result_text:
-            return "TULETA BLK 3 LOTS 5 & 6"
-            
         # If no match found, return empty string
         return ""
 

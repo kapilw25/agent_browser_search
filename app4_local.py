@@ -70,8 +70,6 @@ class APNSearcher:
         street_number = address_parts[0] if address_parts else "306"
         street_name = " ".join(address_parts[1:]).replace("St,", "").replace("St", "").strip() if len(address_parts) > 1 else "Main"
         
-        # Create dynamic task based on inputs - FOCUSED ON APN
-
         # Create dynamic task for APN search
         apn_search_task = f"""
         Step 1. Navigate directly to https://publicrecords.netronline.com/state/{state} and select "{county}" from the county list
@@ -117,23 +115,27 @@ class APNSearcher:
             
             # Only run verification if we found an APN and have a verification prompt
             if initial_parsed_result.get("apn_number") != "APN not found - check raw result" and verification_prompt:
-                # Agent 2: Verify information
+                # Extract the property details URL from agent1's history
+                property_urls = apn_result.urls()
+                property_detail_url = property_urls[-1] if property_urls else None
+                
+                # Agent 2: Verify information with direct URL navigation
                 verification_task = f"""
-                You are already on the property details page for {address}.
+                Navigate directly to this URL: {property_detail_url}
                 
-                CRITICAL TASK: You must find and extract the EXACT TEXT from the Legal Description field.
+                Your ONLY task is to extract the EXACT text from the Legal Description field.
                 
-                Follow these steps precisely:
-                1. Look for a field labeled "Legal Description" on the page
-                2. Read the EXACT text content of this field (not your interpretation of it)
-                3. Copy the EXACT text value - for example: "TULETA BLK 3 LOTS 5 & 6"
-                4. Report it using this format: "Legal Description: [exact text]"
+                1. Find the field labeled "Legal Description" on the page
+                2. Extract the COMPLETE TEXT VALUE from this field
+                3. Report ONLY the exact text you found, using this format:
+                   "Legal Description: [exact text]"
                 
-                DO NOT say "field contains" or describe what you see - you must extract and report the EXACT TEXT VALUE.
+                DO NOT use phrases like "field contains" or "I found" - extract and report the ACTUAL TEXT VALUE.
                 
-                After reporting the exact text, you can then note if it matches or is similar to: "{verification_prompt}"
+                Example of correct response:
+                "Legal Description: TULETA BLK 3 LOTS 5 & 6"
                 
-                Remember: Your primary task is to extract the EXACT TEXT from the Legal Description field.
+                This is the ONLY information you need to extract. Do not extract any other fields.
                 """
                 
                 agent2 = Agent(
@@ -145,10 +147,21 @@ class APNSearcher:
                 )
                 verification_result = await agent2.run()
                 
-                # Parse verification results and merge with initial results
-                verification_info = self.parse_verification_result(str(verification_result))
-                initial_parsed_result["verification_info"] = verification_info
+                # Parse verification results
+                legal_description = self.parse_legal_description(str(verification_result))
+                
+                # Check for semantic match using LLM
+                is_semantic_match = False
+                if legal_description:  # Empty string is falsy in Python
+                    is_semantic_match = await self.check_semantic_match_with_llm(
+                        legal_description, 
+                        verification_prompt
+                    )
+                
+                # Add verification results to the initial results
+                initial_parsed_result["verification_info"] = legal_description if legal_description else "Not found"
                 initial_parsed_result["verification_prompt"] = verification_prompt
+                initial_parsed_result["is_semantic_match"] = is_semantic_match
             elif verification_prompt:
                 # If we have a verification prompt but no APN, add placeholder verification info
                 initial_parsed_result["verification_info"] = "Not found - APN search failed"
@@ -180,50 +193,73 @@ class APNSearcher:
             except Exception as e:
                 pass
 
-    def parse_verification_result(self, result_text):
-        """Parse the verification result to extract relevant information"""
+    def parse_legal_description(self, result_text):
+        """Parse the result to extract the legal description"""
+        # Print the raw result for debugging
+        print("\n--- RAW AGENT RESULT ---")
+        print(result_text[:200] + "..." if len(result_text) > 200 else result_text)
         
-        # Default value if nothing is found
-        verification_info = "Not found"
-        
-        # Primary patterns - looking for the exact format we requested
-        primary_patterns = [
-            r"Legal Description:\s*[\"']([^\"']+)[\"']",
+        # First try to extract from the 'text' field in the done action
+        done_text_pattern = r"'done':\s*\{\s*'text':\s*'Legal Description:\s*([^']+)',"
+        match = re.search(done_text_pattern, result_text)
+        if match:
+            return match.group(1).strip()
+            
+        # Define generic patterns to extract legal description
+        patterns = [
+            # Standard format patterns
+            r"Legal Description:\s*([^\n,'\"]+)",
+            r"Legal Description[:\s]+([^\n,'\"]+)",
+            
+            # Quoted value patterns
             r"Legal Description[:\s]+[\"']([^\"']+)[\"']",
+            r"[\"']Legal Description[\"'][:\s]+[\"']([^\"']+)[\"']",
+            
+            # JSON-like format patterns
+            r"\"Legal ?Description\":\s*\"([^\"]+)\"",
+            r"'Legal ?Description':\s*'([^']+)'",
+            
+            # General field-value patterns
+            r"(?:field|value|text)[:\s]+[\"']([^\"']+)[\"'].*?[Ll]egal [Dd]escription",
+            r"[Ll]egal [Dd]escription.*?(?:field|value|text)[:\s]+[\"']([^\"']+)[\"']",
+            
+            # Extracted content patterns
+            r"extracted.*?[Ll]egal [Dd]escription[:\s]+([^\n,'\"]+)",
+            r"[Ll]egal [Dd]escription.*?extracted[:\s]+([^\n,'\"]+)",
         ]
         
-        # Secondary patterns - more flexible matching
-        secondary_patterns = [
-            r"Legal Description[:\s]+([^\n\.]+)",
-            r"found.*?[\"']([^\"']+)[\"'].*?Legal Description",
-            r"Legal Description.*?contains.*?[\"']([^\"']+)[\"']",
-            r"Legal Description.*?shows.*?[\"']([^\"']+)[\"']",
-            r"Legal Description.*?is.*?[\"']([^\"']+)[\"']",
-            r"Legal Description.*?reads.*?[\"']([^\"']+)[\"']",
-            r"Legal Description.*?states.*?[\"']([^\"']+)[\"']",
-            r"Legal Description.*?field.*?[\"']([^\"']+)[\"']",
-        ]
-        
-        # Try primary patterns first (most reliable)
-        for pattern in primary_patterns:
-            match = re.search(pattern, result_text, re.IGNORECASE | re.DOTALL)
+        # Try each pattern
+        for pattern in patterns:
+            match = re.search(pattern, result_text, re.IGNORECASE)
             if match:
                 extracted_text = match.group(1).strip()
-                if extracted_text and len(extracted_text) > 5 and extracted_text.lower() != "field contains":
-                    verification_info = extracted_text
-                    break
+                # Filter out common phrases that aren't actual values
+                if extracted_text.lower() not in ["field contains", "the field contains", "contains", "is", "shows"]:
+                    return extracted_text
         
-        # If primary patterns didn't work, try secondary patterns
-        if verification_info == "Not found":
-            for pattern in secondary_patterns:
-                match = re.search(pattern, result_text, re.IGNORECASE | re.DOTALL)
-                if match:
-                    extracted_text = match.group(1).strip()
-                    if extracted_text and len(extracted_text) > 5 and extracted_text.lower() != "field contains":
-                        verification_info = extracted_text
-                        break
+        # If no match found, return empty string
+        return ""
+    
+    async def check_semantic_match_with_llm(self, legal_description, verification_prompt):
+        """Use LLM to check if legal description and verification prompt are semantically similar"""
+        prompt = f"""
+        I need to determine if two property descriptions refer to the same property.
         
-        return verification_info
+        Description 1: {legal_description}
+        Description 2: {verification_prompt}
+        
+        Do these descriptions refer to the same property? Consider that they might use different formats or abbreviations.
+        
+        Answer with ONLY 'Yes' or 'No'.
+        """
+        
+        response = await self.llm.ainvoke(prompt)
+        result = response.content.strip().lower()
+        
+        print(f"LLM Response: {result}")
+        
+        # Check if the response indicates a match
+        return "yes" in result.lower()
         
     def parse_apn_result(self, result_text, original_address):
         """Parse the search result to extract APN and property data"""
@@ -462,6 +498,13 @@ def main():
                                 st.markdown("### 🔍 Verification Results")
                                 st.info(f"**Verified against:** {property_data.get('verification_prompt', 'N/A')}")
                                 st.success(f"**Found:** {property_data.get('verification_info', 'Not found')}")
+                                
+                                # Display semantic match result
+                                is_match = property_data.get('is_semantic_match', False)
+                                if is_match:
+                                    st.success("✅ **Semantic Match:** The descriptions refer to the same property")
+                                else:
+                                    st.warning("⚠️ **No Semantic Match:** The descriptions may refer to different properties")
                             
                             # JSON view with APN focus
                             with st.expander("📄 Detailed Results (JSON)"):
@@ -531,6 +574,9 @@ def main():
                         st.text(f"Verification: {search.get('verification_info', 'N/A')}")
                         if search.get('verification_prompt'):
                             st.text(f"Verified against: {search.get('verification_prompt', 'N/A')}")
+                        if 'is_semantic_match' in search:
+                            match_status = "✅ Match" if search.get('is_semantic_match') else "❌ No Match"
+                            st.text(f"Semantic Match: {match_status}")
         else:
             st.info("No APN search history yet. Run your first search!")
     

@@ -19,25 +19,6 @@ The verification agent is not consistently extracting the exact text from the Le
 
 
 
-## UNIT TEST Implementation Plan
-
-### 1. Improve Verification Agent Instructions
-```python
-verification_task = f"""
-You are already on the property details page for {address}.
-
-Your task is to extract the exact text from the Legal Description field.
-
-1. Find the Legal Description field on the page
-2. Extract the COMPLETE TEXT VALUE from this field (example: "TULETA BLK 3 LOTS 5 & 6")
-3. Report ONLY the exact text you found, using this format:
-   "Legal Description: TULETA BLK 3 LOTS 5 & 6"
-
-DO NOT use phrases like "field contains" - extract and report the ACTUAL TEXT VALUE.
-
-After reporting the exact text, check if it contains information similar to: "{verification_prompt}"
-"""
-```
 
 
 
