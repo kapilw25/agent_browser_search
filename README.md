@@ -30,95 +30,40 @@ This project showcases two approaches to browser automation:
 ## Detailed Multi-Agent System Design
 
 ```
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                          STREAMLIT USER INTERFACE                             │
-│                                                                               │
-│  ┌─────────────────────────┐                    ┌──────────────────────────┐  │
-│  │   Input Parameters      │                    │    Results Display       │  │
-│  │                         │                    │                          │  │
-│  │ ┌─────────────────────┐ │                    │ ┌────────────────────┐   │  │
-│  │ │ - Property Address  │ │                    │ │ - APN Number       │   │  │
-│  │ │ - State             │ │                    │ │ - Property Owner   │   │  │
-│  │ │ - County            │ │                    │ │ - Property Address │   │  │
-│  │ │ - Verification Info │ │                    │ │ - Appraised Value │   │  │
-│  │ └─────────────────────┘ │                    │ └────────────────────┘   │  │
-│  └─────────────────────────┘                    │ ┌────────────────────┐   │  │
-│                                                 │ │ Verification       │   │  │
-│                                                 │ │ - Expected Info    │   │  │
-│                                                 │ │ - Found Info       │   │  │
-│                                                 │ │ - Semantic Match   │   │  │
-│                                                 │ └────────────────────┘   │  │
-│                                                 └──────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                         MULTI-AGENT CONTROLLER                                │
-│                                                                               │
-│  ┌─────────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                         │  │
-│  │  1. Initialize shared browser session                                   │  │
-│  │  2. Configure Agent 1 with search task                                  │  │
-│  │  3. Execute Agent 1 and collect results                                 │  │
-│  │  4. Configure Agent 2 with verification task + Agent 1 results          │  │
-│  │  5. Execute Agent 2 and collect verification results                    │  │
-│  │  6. Close shared browser session                                        │  │
-│  │  7. Return combined results to UI                                       │  │
-│  │                                                                         │  │
-│  └─────────────────────────────────────────────────────────────────────────┘  │
-│                                                                               │
-└───────────────────────────────────────────────────────────────────────────────┘
-                │                                           │
-                ▼                                           ▼
-┌─────────────────────────────────┐         ┌─────────────────────────────────┐
-│         AGENT 1: APN SEARCH     │         │     AGENT 2: VERIFICATION       │
-│                                 │         │                                 │
-│  ┌─────────────────────────┐    │         │  ┌─────────────────────────┐    │
-│  │ Task Definition:        │    │         │  │ Task Definition:        │    │
-│  │ - Navigate to county    │    │         │  │ - Access property page  │    │
-│  │   property search       │    │         │  │   using APN from Agent 1 │    │
-│  │ - Input address/location│    │         │  │ - Extract legal         │    │
-│  │ - Submit search form    │    │         │  │   description           │    │
-│  │ - Extract APN number    │    │         │  │ - Compare with expected │    │
-│  │ - Extract basic property│    │         │  │   verification info     │    │
-│  │   details              │    │         │  │ - Perform semantic      │    │
-│  │                         │    │         │  │   matching              │    │
-│  └─────────────────────────┘    │         │  └─────────────────────────┘    │
-│                                 │         │                                 │
-└─────────────────────────────────┘         └─────────────────────────────────┘
-                │                                           │
-                └───────────────┬───────────────────────────┘
-                                ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                         SHARED BROWSER SESSION                                │
-│                                                                               │
-│  ┌─────────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                         │  │
-│  │  - Chromium browser instance                                           │  │
-│  │  - Persistent user profile                                             │  │
-│  │  - Shared cookies and session state                                    │  │
-│  │  - Visual processing capabilities                                       │  │
-│  │  - DOM interaction methods                                             │  │
-│  │                                                                         │  │
-│  └─────────────────────────────────────────────────────────────────────────┘  │
-│                                                                               │
-└───────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                              LLM INTEGRATION                                  │
-│                                                                               │
-│  ┌─────────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                         │  │
-│  │  - GPT-4o model for both agents                                        │  │
-│  │  - Vision capabilities for screenshot analysis                          │  │
-│  │  - Task planning and execution                                          │  │
-│  │  - Natural language understanding of property descriptions              │  │
-│  │  - Semantic matching for verification                                   │  │
-│  │                                                                         │  │
-│  └─────────────────────────────────────────────────────────────────────────┘  │
-│                                                                               │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────── STREAMLIT UI ────────────────────────────────┐
+│ ┌─────────────────┐                                     ┌────────────────────┐  │
+│ │ Input:          │                                     │ Results:           │  │
+│ │ - Address       │                                     │ - APN Number       │  │
+│ │ - State/County  │                                     │ - Owner/Address    │  │
+│ │ - Verify Info   │                                     │ - Verification     │  │
+│ └─────────────────┘                                     └────────────────────┘  │
+└───────────────────────────────────────┬─────────────────────────────────────────┘
+                                        │
+                                        ▼
+┌─────────────────────────────── MULTI-AGENT CONTROLLER ───────────────────────────┐
+│ 1. Initialize shared browser → 2. Run Agent 1 → 3. Pass results → 4. Run Agent 2 │
+└───────────────┬─────────────────────────────────────────┬─────────────────────────┘
+                │                                         │
+    ┌───────────▼────────────┐                 ┌─────────▼───────────┐
+    │  AGENT 1: APN SEARCH   │                 │ AGENT 2: VERIFICATION │
+    │ - Navigate to records  │                 │ - Use APN from Agent 1 │
+    │ - Search by address    │                 │ - Extract legal desc.  │
+    │ - Extract APN & info   │                 │ - Perform matching    │
+    └───────────┬────────────┘                 └─────────┬───────────┘
+                │                                         │
+                └─────────────────┬───────────────────────┘
+                                  ▼
+┌─────────────────────────── SHARED BROWSER SESSION ──────────────────────────────┐
+│ - Chromium browser with persistent profile                                     │
+│ - Shared cookies and session state                                             │
+│ - Visual processing and DOM interaction                                        │
+└───────────────────────────────────┬─────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────── LLM INTEGRATION ────────────────────────────────┐
+│ - GPT-4o model with vision capabilities                                       │
+│ - Task planning, NL understanding, semantic matching                           │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Application Screenshots
