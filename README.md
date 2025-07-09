@@ -124,11 +124,11 @@ This project showcases two approaches to browser automation:
 ## Application Screenshots
 
 ### Basic Single-Agent Workflow (app1_local.py)
-![Basic APN Lookup Tool](SS/app1_output.png)
+![Basic APN Lookup Tool](readme_files/app1_output.png)
 *Screenshot of streamlit app after successful execution of app1_local.py - Single agent retrieves APN only*
 
 ### Advanced Multi-Agent Workflow (app4_local.py)
-![Advanced APN Lookup Tool with Verification](SS/app4_output_2.png)
+![Advanced APN Lookup Tool with Verification](readme_files/app4_output_2.png)
 *Screenshot of streamlit app after successful execution of app4_local.py - Two agents work together to retrieve and verify property data*
 
 ## Technical Implementation
